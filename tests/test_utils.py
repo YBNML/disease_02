@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import os
+import random
 from pathlib import Path
 
+import numpy as np
 import pytest
+import torch
 
 from disease_detection.utils.io import resolve_dataset_root
+from disease_detection.utils.seeding import set_seed
 
 
 def test_resolve_dataset_root_from_env(tmp_path, monkeypatch):
@@ -41,3 +45,19 @@ def test_resolve_dataset_root_require_exists(monkeypatch):
     monkeypatch.setenv("DATASET_ROOT", "/definitely/does/not/exist/xyz")
     with pytest.raises(FileNotFoundError):
         resolve_dataset_root(require_exists=True)
+
+
+def test_set_seed_makes_random_deterministic():
+    set_seed(123)
+    a = [random.random(), np.random.rand(), float(torch.rand(1))]
+    set_seed(123)
+    b = [random.random(), np.random.rand(), float(torch.rand(1))]
+    assert a == b
+
+
+def test_set_seed_different_values_differ():
+    set_seed(1)
+    a = float(torch.rand(1))
+    set_seed(2)
+    b = float(torch.rand(1))
+    assert a != b
