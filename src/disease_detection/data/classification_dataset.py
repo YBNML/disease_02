@@ -101,9 +101,11 @@ class ClassificationCropDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> tuple:
         item = self.items[idx]
-        pil = Image.open(item.image_path).convert("RGB")
+        # `with` 구문으로 파일 핸들을 즉시 해제 — num_workers>0 에서 fd 누적 방지.
+        with Image.open(item.image_path) as src:
+            pil = src.convert("RGB")
         x1, y1, x2, y2 = item.xyxy
         crop = pil.crop((x1, y1, x2, y2))
         # tv_tensors.Image(PIL)은 이미 (3, H, W) uint8 Tensor를 생성. transform이

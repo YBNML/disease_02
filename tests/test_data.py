@@ -134,9 +134,11 @@ def test_build_defect_crops_applies_severity_threshold(fixtures_dir):
         fixtures_dir / "dummy_vlm_labels.jsonl",
         defect_threshold=4,
     )
-    # severity=6 → defect (label=1). Only leaf box matches vlm plant_part.
-    assert len(items) >= 1
-    assert any(item.label == 1 and item.plant_part == "leaf" for item in items)
+    # 2-line fixture: leaf severity=6 (→ defect=1), fruit severity=2 (→ normal=0)
+    assert len(items) == 2
+    by_part = {it.plant_part: it for it in items}
+    assert by_part["leaf"].label == 1
+    assert by_part["fruit"].label == 0
 
 
 def test_classification_crop_dataset_returns_tensor(fixtures_dir):
