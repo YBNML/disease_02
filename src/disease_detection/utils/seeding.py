@@ -1,20 +1,14 @@
 """재현성을 위한 일괄 seed 설정."""
 from __future__ import annotations
 
-import os
-import random
-
-import numpy as np
-import torch
+import pytorch_lightning as pl
 
 
 def set_seed(seed: int) -> None:
-    """Python random / numpy / torch / PYTHONHASHSEED 동시 시드.
+    """Python / numpy / torch / PYTHONHASHSEED + DataLoader worker 시드를 일괄 설정.
 
-    Lightning의 `seed_everything`과 같은 역할을 하지만 의존성 최소화를 위해 직접 구현.
+    내부적으로 `pytorch_lightning.seed_everything(..., workers=True)`에 위임.
+    `workers=True`는 `DataLoader`의 각 worker 프로세스에 결정적 시드를 배포한다
+    (Phase 1의 detector·classifier 학습에서 multi-worker loading이 쓰이므로 중요).
     """
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    pl.seed_everything(seed, workers=True)
