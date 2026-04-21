@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 
+from disease_detection.data.aihub import AIhubImage, load_aihub_split
 from disease_detection.data.transforms import (
     build_classifier_train_transform,
     build_classifier_eval_transform,
@@ -40,3 +43,18 @@ def test_detector_train_transform_preserves_bbox_count():
     img_out, target_out = tfm(img, target)
     assert len(target_out["boxes"]) == 2
     assert img_out.dtype == torch.float32
+
+
+def test_load_aihub_split_parses_fixture(fixtures_dir):
+    root = fixtures_dir / "dummy_aihub"
+    entries = load_aihub_split(root)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert isinstance(entry, AIhubImage)
+    assert entry.crop == "pear"
+    assert entry.fireblight == 1
+    assert entry.width == 640
+    assert entry.height == 480
+    assert len(entry.boxes) == 2
+    assert entry.boxes[0].category == "leaf"
+    assert entry.boxes[0].xyxy == (100.0, 80.0, 350.0, 380.0)  # x+w, y+h
