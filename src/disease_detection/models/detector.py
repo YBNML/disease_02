@@ -30,6 +30,8 @@ class FasterRCNNModule(pl.LightningModule):
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         self.model = model
+        # prediction cache 축적용 (on_validation_epoch_end에서 비움).
+        self._val_cache: list[tuple[list[dict], list[dict]]] = []
 
     def forward(self, images, targets=None):
         return self.model(images, targets)
@@ -46,21 +48,22 @@ class FasterRCNNModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        # Lightning이 진입 시 self.eval()을 호출하므로 self.model은 이미 eval 모드.
+        # 수동 토글은 train 모드로 되돌려 후속 val 배치의 contract를 깨뜨리므로 금지.
         images, targets = batch
-        # torchvision detection heads return dict of losses in train, predictions in eval.
-        # Use a separate train()/eval() split if you want both; here: predictions only.
-        self.model.eval()
         with torch.no_grad():
             preds = self.model(images)
-        self.model.train()
-        # mAP는 epoch 말미에 집계 — 여기선 prediction만 축적
-        if not hasattr(self, "_val_cache"):
-            self._val_cache = []
-        self._val_cache.append((preds, targets))
+        # 실제 mAP 계산은 evaluate 스크립트에서. 여기선 샘플 수만 로깅하여 sanity check.
+        # GPU 메모리 누적 방지를 위해 CPU로 detach하여 저장.
+        self._val_cache.append(
+            (
+                [{k: v.detach().cpu() for k, v in p.items()} for p in preds],
+                [{k: v.detach().cpu() for k, v in t.items()} for t in targets],
+            )
+        )
 
     def on_validation_epoch_end(self) -> None:
-        # 실제 mAP 계산은 evaluate 스크립트에서. 여기선 샘플 수만 로깅하여 sanity check.
-        count = len(getattr(self, "_val_cache", []))
+        count = len(self._val_cache)
         self.log("val/batches", float(count), prog_bar=False)
         self._val_cache = []
 
