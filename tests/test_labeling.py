@@ -121,3 +121,94 @@ def test_call_claude_cli_timeout_normalized_to_runtimeerror(mocker, tmp_path):
     img.write_bytes(b"fake")
     with pytest.raises(RuntimeError, match="timed out"):
         call_claude_cli(img, prompt="P", model="haiku", timeout_seconds=1)
+
+
+from disease_detection.labeling.batch_label import (
+    BatchJob,
+    BatchResult,
+    hash_image_file,
+    load_completed_hashes,
+    run_batch,
+)
+
+
+def test_hash_image_file_deterministic(tmp_path):
+    p = tmp_path / "x.jpg"
+    p.write_bytes(b"hello world")
+    h1 = hash_image_file(p)
+    h2 = hash_image_file(p)
+    assert h1 == h2 and len(h1) == 64  # sha256 hex
+
+
+def test_load_completed_hashes_reads_existing_jsonl(tmp_path):
+    jsonl = tmp_path / "labels.jsonl"
+    jsonl.write_text(
+        '{"image_sha256": "a", "classification": "NORMAL"}\n'
+        '{"image_sha256": "b", "classification": "DEFECT"}\n',
+        encoding="utf-8",
+    )
+    assert load_completed_hashes(jsonl) == {"a", "b"}
+
+
+def test_run_batch_skips_existing_hash(tmp_path, mocker):
+    from disease_detection.labeling.vlm_client import VLMLabel
+
+    img1 = tmp_path / "a.jpg"
+    img1.write_bytes(b"one")
+    img2 = tmp_path / "b.jpg"
+    img2.write_bytes(b"two")
+
+    jsonl = tmp_path / "out.jsonl"
+    # a.jpg is pre-labeled
+    jsonl.write_text(
+        '{"image_sha256": "' + hash_image_file(img1) + '", "severity": 0}\n',
+        encoding="utf-8",
+    )
+
+    call_mock = mocker.patch(
+        "disease_detection.labeling.batch_label.call_claude_cli",
+        return_value=VLMLabel(classification="DEFECT", severity=7, explanation="x"),
+    )
+
+    jobs = [
+        BatchJob(image_path=img1, crop="pear", plant_part="leaf"),
+        BatchJob(image_path=img2, crop="pear", plant_part="leaf"),
+    ]
+    result: BatchResult = run_batch(
+        jobs=jobs,
+        output_jsonl=jsonl,
+        prompt="P",
+        prompt_version="v1",
+        model="haiku",
+    )
+
+    assert result.processed == 1  # only b.jpg
+    assert result.skipped == 1
+    assert call_mock.call_count == 1
+
+
+def test_run_batch_writes_errors(tmp_path, mocker):
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"one")
+    jsonl = tmp_path / "out.jsonl"
+
+    mocker.patch(
+        "disease_detection.labeling.batch_label.call_claude_cli",
+        side_effect=RuntimeError("rate limit"),
+    )
+    # minimize backoff for test
+    mocker.patch("disease_detection.labeling.batch_label.time.sleep", return_value=None)
+
+    jobs = [BatchJob(image_path=img, crop="pear", plant_part="leaf")]
+    result = run_batch(
+        jobs=jobs,
+        output_jsonl=jsonl,
+        prompt="P",
+        prompt_version="v1",
+        model="haiku",
+        max_retries=2,
+    )
+    assert result.failed == 1
+    errors_path = jsonl.with_name(jsonl.stem + ".errors.jsonl")
+    assert errors_path.exists()
+    assert "rate limit" in errors_path.read_text()

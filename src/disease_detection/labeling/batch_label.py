@@ -1,0 +1,151 @@
+"""재개 가능한 VLM 배치 라벨링 실행기.
+
+- SHA256 기반 중복 회피 (이미 JSONL에 있는 해시는 스킵)
+- 이미지당 exponential backoff 재시도, 영구 실패는 `.errors.jsonl`에 보존
+- 진행 상황은 tqdm으로 표시
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from tqdm import tqdm
+
+from .vlm_client import VLMLabel, call_claude_cli
+
+
+@dataclass(frozen=True)
+class BatchJob:
+    image_path: Path
+    crop: str
+    plant_part: str
+
+
+@dataclass
+class BatchResult:
+    processed: int
+    skipped: int
+    failed: int
+
+
+def hash_image_file(path: Path, chunk_size: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        while True:
+            chunk = fh.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_completed_hashes(jsonl: Path) -> set[str]:
+    if not jsonl.exists():
+        return set()
+    done: set[str] = set()
+    with jsonl.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if "image_sha256" in obj:
+                    done.add(obj["image_sha256"])
+            except json.JSONDecodeError:
+                continue
+    return done
+
+
+def _backoff_seconds(attempt: int, base: int = 60, cap: int = 1800) -> int:
+    return min(cap, base * (2 ** (attempt - 1)))
+
+
+def _write_label_line(
+    output: Path,
+    *,
+    job: BatchJob,
+    sha: str,
+    label: VLMLabel,
+    model: str,
+    prompt_version: str,
+) -> None:
+    record = {
+        "image_path": str(job.image_path),
+        "image_sha256": sha,
+        "crop": job.crop,
+        "plant_part": job.plant_part,
+        "classification": label.classification,
+        "severity": label.severity,
+        "explanation": label.explanation,
+        "model": model,
+        "prompt_version": prompt_version,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    with output.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _write_error_line(errors: Path, *, job: BatchJob, error: str) -> None:
+    errors.parent.mkdir(parents=True, exist_ok=True)
+    with errors.open("a", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {
+                    "image_path": str(job.image_path),
+                    "crop": job.crop,
+                    "plant_part": job.plant_part,
+                    "error": error,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            + "\n"
+        )
+
+
+def run_batch(
+    jobs: list[BatchJob],
+    output_jsonl: Path,
+    prompt: str,
+    prompt_version: str,
+    model: str = "haiku",
+    max_retries: int = 3,
+) -> BatchResult:
+    output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    errors_path = output_jsonl.with_name(output_jsonl.stem + ".errors.jsonl")
+    done_hashes = load_completed_hashes(output_jsonl)
+
+    processed = skipped = failed = 0
+    for job in tqdm(jobs, desc="VLM labeling"):
+        sha = hash_image_file(job.image_path)
+        if sha in done_hashes:
+            skipped += 1
+            continue
+        last_error: str | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                label = call_claude_cli(job.image_path, prompt=prompt, model=model)
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                if attempt < max_retries:
+                    time.sleep(_backoff_seconds(attempt))
+                continue
+            _write_label_line(
+                output_jsonl,
+                job=job,
+                sha=sha,
+                label=label,
+                model=model,
+                prompt_version=prompt_version,
+            )
+            done_hashes.add(sha)
+            processed += 1
+            break
+        else:
+            _write_error_line(errors_path, job=job, error=last_error or "unknown")
+            failed += 1
+    return BatchResult(processed=processed, skipped=skipped, failed=failed)
