@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,15 +18,39 @@ class VLMLabel:
     explanation: str
 
 
-_JSON_BLOCK = re.compile(r"\{.*?\}", re.DOTALL)
+def _extract_first_json_object(raw: str) -> str:
+    """첫 번째 `{ ... }` balanced block을 추출. 문자열 내 중괄호·escape 처리."""
+    start = raw.find("{")
+    if start == -1:
+        raise ValueError(f"JSON 블록을 찾지 못함: {raw[:200]}")
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(raw)):
+        ch = raw[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : i + 1]
+    raise ValueError(f"균형 맞지 않는 JSON 블록: {raw[:200]}")
 
 
 def parse_vlm_response(raw: str) -> VLMLabel:
-    """문자열에서 첫 번째 JSON 블록을 추출하여 VLMLabel로 변환."""
-    match = _JSON_BLOCK.search(raw)
-    if match is None:
-        raise ValueError(f"JSON 블록을 찾지 못함: {raw[:200]}")
-    obj = json.loads(match.group(0))
+    """문자열에서 첫 번째 JSON 블록(중괄호 균형 기준)을 추출하여 VLMLabel로 변환."""
+    obj = json.loads(_extract_first_json_object(raw))
     cls = str(obj["classification"]).upper()
     sev = int(obj["severity"])
     expl = str(obj.get("explanation", ""))

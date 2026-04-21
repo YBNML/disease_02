@@ -48,6 +48,24 @@ def test_parse_vlm_response_invalid_raises():
         parse_vlm_response("not json at all")
 
 
+def test_parse_vlm_response_handles_nested_objects():
+    raw = (
+        'Sure, here is the answer: '
+        '{"classification": "DEFECT", "severity": 5, '
+        '"meta": {"confidence": 0.9, "nested": {"k": 1}}, '
+        '"explanation": "spot"}'
+    )
+    label = parse_vlm_response(raw)
+    assert label.severity == 5
+    assert label.classification == "DEFECT"
+
+
+def test_parse_vlm_response_handles_braces_inside_strings():
+    raw = '{"classification": "NORMAL", "severity": 0, "explanation": "text with } brace"}'
+    label = parse_vlm_response(raw)
+    assert label.explanation == "text with } brace"
+
+
 def test_call_claude_cli_invokes_subprocess(mocker, tmp_path):
     completed = MagicMock()
     completed.returncode = 0
