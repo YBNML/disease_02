@@ -58,3 +58,41 @@ def test_load_aihub_split_parses_fixture(fixtures_dir):
     assert len(entry.boxes) == 2
     assert entry.boxes[0].category == "leaf"
     assert entry.boxes[0].xyxy == (100.0, 80.0, 350.0, 380.0)  # x+w, y+h
+
+
+def test_load_aihub_split_accepts_custom_loader(fixtures_dir):
+    """Pluggable loader: inject a function that normalizes alternate schemas."""
+    root = fixtures_dir / "dummy_aihub"
+
+    def loader(p: Path) -> dict:
+        import json
+
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        raw["meta"] = {"crop": "apple"}  # override via loader
+        return raw
+
+    entries = load_aihub_split(root, annotation_loader=loader)
+    assert entries[0].crop == "apple"
+
+
+def test_load_aihub_split_strict_raises_on_missing(tmp_path):
+    (tmp_path / "images").mkdir()
+    (tmp_path / "annotations").mkdir()
+    (tmp_path / "images" / "x.jpg").write_bytes(b"")
+    import pytest
+
+    with pytest.raises(FileNotFoundError, match="x.json"):
+        load_aihub_split(tmp_path, strict=True)
+
+
+def test_load_aihub_split_wraps_parse_errors_with_file_path(tmp_path):
+    (tmp_path / "images").mkdir()
+    (tmp_path / "annotations").mkdir()
+    (tmp_path / "images" / "bad.jpg").write_bytes(b"")
+    (tmp_path / "annotations" / "bad.json").write_text(
+        '{"image": {"width": 100, "height": 100}, "annotations": [{"bbox": [1,2,3], "category": "leaf"}]}'
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="bad.json"):
+        load_aihub_split(tmp_path)
