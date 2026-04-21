@@ -96,3 +96,22 @@ def test_load_aihub_split_wraps_parse_errors_with_file_path(tmp_path):
 
     with pytest.raises(ValueError, match="bad.json"):
         load_aihub_split(tmp_path)
+
+
+from disease_detection.data.detection_dataset import DetectionDataset, PART_CATEGORIES
+
+
+def test_part_categories_mapping():
+    # background=0, leaf=1, stem=2, fruit=3
+    assert PART_CATEGORIES["leaf"] == 1
+    assert PART_CATEGORIES["stem"] == 2
+    assert PART_CATEGORIES["fruit"] == 3
+
+
+def test_detection_dataset_item_shapes(fixtures_dir):
+    ds = DetectionDataset.from_aihub_root(fixtures_dir / "dummy_aihub")
+    img, target = ds[0]
+    assert img.ndim == 3 and img.shape[0] == 3  # CHW
+    assert target["boxes"].shape == (2, 4)
+    assert target["labels"].tolist() == [1, 3]  # leaf, fruit
+    assert target["image_id"].numel() == 1
