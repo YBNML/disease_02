@@ -36,7 +36,9 @@ class DetectionDataset(Dataset):
     def __len__(self) -> int:
         return len(self.entries)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         entry = self.entries[idx]
         pil = Image.open(entry.image_path).convert("RGB")
         img = tv_tensors.Image(pil)
@@ -53,14 +55,18 @@ class DetectionDataset(Dataset):
         boxes = tv_tensors.BoundingBoxes(
             xyxy, format="XYXY", canvas_size=(entry.height, entry.width)
         )
-        areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
         target = {
             "boxes": boxes,
             "labels": labels,
             "image_id": torch.tensor([idx]),
-            "area": areas,
             "iscrowd": torch.zeros((len(labels),), dtype=torch.int64),
         }
         if self.transform is not None:
             img, target = self.transform(img, target)
+
+        # `area`는 transform 이후에 계산해야 geometric augmentation (resize, crop,
+        # scale jitter 등) 적용된 bbox 기준이 된다. COCO eval의 small/medium/large
+        # 분류에도 이 값이 쓰이므로 pre-transform 계산은 금지.
+        b = target["boxes"]
+        target["area"] = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
         return img, target

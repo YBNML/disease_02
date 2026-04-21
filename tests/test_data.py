@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 
 from disease_detection.data.aihub import AIhubImage, load_aihub_split
+from disease_detection.data.detection_dataset import DetectionDataset, PART_CATEGORIES
 from disease_detection.data.transforms import (
     build_classifier_train_transform,
     build_classifier_eval_transform,
@@ -96,9 +97,6 @@ def test_load_aihub_split_wraps_parse_errors_with_file_path(tmp_path):
 
     with pytest.raises(ValueError, match="bad.json"):
         load_aihub_split(tmp_path)
-
-
-from disease_detection.data.detection_dataset import DetectionDataset, PART_CATEGORIES
 
 
 def test_part_categories_mapping():
