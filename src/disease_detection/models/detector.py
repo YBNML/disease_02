@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torch
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
+from torchmetrics.detection import MeanAveragePrecision
 from torchvision.models.detection import (
     FasterRCNN_ResNet50_FPN_V2_Weights,
     fasterrcnn_resnet50_fpn_v2,
@@ -30,8 +31,9 @@ class FasterRCNNModule(pl.LightningModule):
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         self.model = model
-        # prediction cache 축적용 (on_validation_epoch_end에서 비움).
-        self._val_cache: list[tuple[list[dict], list[dict]]] = []
+        # val mAP를 스트리밍 집계. `validation_step`마다 update,
+        # `on_validation_epoch_end`에서 compute → log → reset.
+        self._val_map = MeanAveragePrecision(iou_type="bbox", class_metrics=False)
 
     def forward(self, images, targets=None):
         return self.model(images, targets)
@@ -49,23 +51,21 @@ class FasterRCNNModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         # Lightning이 진입 시 self.eval()을 호출하므로 self.model은 이미 eval 모드.
-        # 수동 토글은 train 모드로 되돌려 후속 val 배치의 contract를 깨뜨리므로 금지.
         images, targets = batch
         with torch.no_grad():
             preds = self.model(images)
-        # 실제 mAP 계산은 evaluate 스크립트에서. 여기선 샘플 수만 로깅하여 sanity check.
-        # GPU 메모리 누적 방지를 위해 CPU로 detach하여 저장.
-        self._val_cache.append(
-            (
-                [{k: v.detach().cpu() for k, v in p.items()} for p in preds],
-                [{k: v.detach().cpu() for k, v in t.items()} for t in targets],
-            )
-        )
+        # CPU로 detach한 사본으로 MAP 업데이트 — GPU 누적 방지.
+        preds_cpu = [{k: v.detach().cpu() for k, v in p.items()} for p in preds]
+        targets_cpu = [{k: v.detach().cpu() for k, v in t.items()} for t in targets]
+        self._val_map.update(preds_cpu, targets_cpu)
 
     def on_validation_epoch_end(self) -> None:
-        count = len(self._val_cache)
-        self.log("val/batches", float(count), prog_bar=False)
-        self._val_cache = []
+        raw = self._val_map.compute()
+        # 체크포인트·조기 종료가 참조하는 주요 지표. mode=max.
+        self.log("val/map_50", raw["map_50"], prog_bar=True)
+        self.log("val/map", raw["map"], prog_bar=False)
+        self.log("val/map_75", raw["map_75"], prog_bar=False)
+        self._val_map.reset()
 
     def configure_optimizers(self):
         params = [p for p in self.parameters() if p.requires_grad]

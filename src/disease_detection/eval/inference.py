@@ -1,7 +1,7 @@
 """End-to-end 평가 경로.
 
 - `evaluate_classifier_oracle` — GT bbox로 crop한 분류 입력에 대한 분류기 단독 평가 (상한).
-- `evaluate_pipeline_realistic` — Detector 예측 bbox를 활용한 2단계 파이프라인 평가.
+- `evaluate_pipeline_realistic_image` — Detector 예측 bbox로 이미지 단위 화상병 집계.
 """
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ from typing import Callable
 import torch
 from torch.utils.data import DataLoader
 
+from ..data.aihub import AIhubImage
 from ..data.classification_dataset import ClassificationCropDataset, CropItem
 from ..data.transforms import build_classifier_eval_transform
+from ..models.pipeline import TwoStagePipeline
 from .metrics import ClassificationMetricsReport, compute_classification_report
 
 
@@ -47,4 +49,28 @@ def evaluate_classifier_oracle(
 
     y_score = torch.cat(all_scores)
     y_true = torch.cat(all_labels)
+    return compute_classification_report(y_true, y_score, threshold=threshold)
+
+
+def evaluate_pipeline_realistic_image(
+    entries: list[AIhubImage],
+    pipeline: TwoStagePipeline,
+    threshold: float = 0.5,
+) -> ClassificationMetricsReport:
+    """이미지 단위 화상병 분류 (realistic path).
+
+    각 이미지에 대해 파이프라인이 예측한 detection 중 최대 `fireblight_prob`을
+    이미지 스코어로 집계. 예측된 detection이 없으면 0.0. GT는 AIhub 원본 이미지
+    단위 `fireblight` 라벨. Oracle(crop 단위)과 비교 가능한 형태로 이미지 단위
+    스코어를 별도 리포트.
+    """
+    scores: list[float] = []
+    labels: list[int] = []
+    for entry in entries:
+        pred = pipeline.predict_image(entry.image_path, crop=entry.crop)
+        score = max((d.fireblight_prob for d in pred.detections), default=0.0)
+        scores.append(score)
+        labels.append(int(entry.fireblight))
+    y_score = torch.tensor(scores)
+    y_true = torch.tensor(labels)
     return compute_classification_report(y_true, y_score, threshold=threshold)
