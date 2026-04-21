@@ -38,9 +38,20 @@ def collect_jobs(aihub_root: Path, sample_size: int, seed: int) -> list[BatchJob
                 )
 
     rng = random.Random(seed)
-    per_bucket = max(1, sample_size // max(1, len(buckets)))
+    if not buckets:
+        return []
+    # sample_size < len(buckets)인 경우: 버킷을 결정적으로 sub-sample하여 1개씩 뽑음.
+    # 이렇게 하지 않으면 per_bucket이 1로 floor되어 모든 버킷에서 뽑다가 끝에서
+    # 잘려나가, 남는 버킷이 dict 삽입 순서에 의존해 비결정적 strata selection이 됨.
+    bucket_keys = list(buckets.keys())
+    if sample_size < len(bucket_keys):
+        bucket_keys = rng.sample(bucket_keys, sample_size)
+        per_bucket = 1
+    else:
+        per_bucket = max(1, sample_size // len(bucket_keys))
     selected: list[BatchJob] = []
-    for key, jobs in buckets.items():
+    for key in bucket_keys:
+        jobs = buckets[key]
         rng.shuffle(jobs)
         selected.extend(jobs[:per_bucket])
     rng.shuffle(selected)
