@@ -101,3 +101,23 @@ def test_call_claude_cli_nonzero_exit_raises(mocker, tmp_path):
     img.write_bytes(b"fake")
     with pytest.raises(RuntimeError, match="rate limit"):
         call_claude_cli(img, prompt="P", model="haiku")
+
+
+def test_call_claude_cli_missing_image_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(FileNotFoundError):
+        call_claude_cli(tmp_path / "nope.jpg", prompt="P", model="haiku")
+
+
+def test_call_claude_cli_timeout_normalized_to_runtimeerror(mocker, tmp_path):
+    import pytest
+
+    mocker.patch(
+        "disease_detection.labeling.vlm_client.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=1),
+    )
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"fake")
+    with pytest.raises(RuntimeError, match="timed out"):
+        call_claude_cli(img, prompt="P", model="haiku", timeout_seconds=1)

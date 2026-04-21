@@ -69,16 +69,29 @@ def call_claude_cli(
 ) -> VLMLabel:
     """`claude -p` 호출 후 응답 파싱.
 
-    이미지 경로는 프롬프트 끝에 직접 포함. Claude Code는 절대 경로를 Read 툴로 자동 로딩.
+    이미지 경로는 프롬프트 끝에 직접 포함. Claude Code는 절대 경로를 Read 툴로
+    자동 로딩한다. `batch_label.py`가 재시도 경계로 삼을 수 있도록, timeout도
+    `RuntimeError`로 정규화하여 단일 exception 컨트랙트를 유지한다.
+
+    Raises:
+        FileNotFoundError: `image_path`가 존재하지 않음.
+        RuntimeError: CLI 비정상 종료, timeout, 또는 응답 파싱 실패.
     """
+    if not image_path.exists():
+        raise FileNotFoundError(f"이미지 없음: {image_path}")
     full_prompt = f"{prompt}\n\nImage to inspect: {image_path}"
     args = ["claude", "-p", full_prompt, "--model", model]
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"claude CLI timed out after {timeout_seconds}s: {exc}"
+        ) from exc
     if result.returncode != 0:
         raise RuntimeError(
             f"claude CLI failed (rc={result.returncode}): {result.stderr.strip()}"
