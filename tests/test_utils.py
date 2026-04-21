@@ -19,6 +19,18 @@ def test_resolve_dataset_root_raises_when_unset(monkeypatch):
         resolve_dataset_root()
 
 
+def test_resolve_dataset_root_raises_when_empty(monkeypatch):
+    monkeypatch.setenv("DATASET_ROOT", "")
+    with pytest.raises(RuntimeError, match="DATASET_ROOT"):
+        resolve_dataset_root()
+
+
+def test_resolve_dataset_root_raises_when_whitespace(monkeypatch):
+    monkeypatch.setenv("DATASET_ROOT", "   ")
+    with pytest.raises(RuntimeError, match="DATASET_ROOT"):
+        resolve_dataset_root()
+
+
 def test_resolve_dataset_root_expands_user(monkeypatch):
     monkeypatch.setenv("DATASET_ROOT", "~/nonexistent_ds_root_xyz")
     result = resolve_dataset_root(require_exists=False)

@@ -16,10 +16,11 @@ def resolve_dataset_root(require_exists: bool = True) -> Path:
         FileNotFoundError: require_exists=True인데 경로 없음.
     """
     raw = os.environ.get("DATASET_ROOT")
-    if not raw:
+    if raw is None or not raw.strip():
         raise RuntimeError(
-            "DATASET_ROOT 환경변수가 설정되지 않음. .env.example 참고."
+            "DATASET_ROOT 환경변수가 비어있거나 설정되지 않음. .env.example 참고."
         )
+    raw = raw.strip()
     path = Path(raw).expanduser()
     if require_exists and not path.exists():
         raise FileNotFoundError(f"DATASET_ROOT 경로 없음: {path}")
