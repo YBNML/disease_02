@@ -1,0 +1,1 @@
+{"image_path": "images/sample1.jpg", "image_sha256": "dummy", "crop": "pear", "plant_part": "leaf", "classification": "DEFECT", "severity": 6, "explanation": "leaf tip browning", "model": "claude-haiku-4-5", "prompt_version": "v1", "timestamp": "2026-04-21T00:00:00Z"}

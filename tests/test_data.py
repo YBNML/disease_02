@@ -5,6 +5,11 @@ from pathlib import Path
 import torch
 
 from disease_detection.data.aihub import AIhubImage, load_aihub_split
+from disease_detection.data.classification_dataset import (
+    build_fireblight_crops,
+    build_defect_crops,
+    ClassificationCropDataset,
+)
 from disease_detection.data.detection_dataset import DetectionDataset, PART_CATEGORIES
 from disease_detection.data.transforms import (
     build_classifier_train_transform,
@@ -113,3 +118,30 @@ def test_detection_dataset_item_shapes(fixtures_dir):
     assert target["boxes"].shape == (2, 4)
     assert target["labels"].tolist() == [1, 3]  # leaf, fruit
     assert target["image_id"].numel() == 1
+
+
+def test_build_fireblight_crops_uses_aihub_labels(fixtures_dir):
+    items = build_fireblight_crops(fixtures_dir / "dummy_aihub")
+    # sample1 has fireblight=1, 2 boxes → 2 crop items, both label=1
+    assert len(items) == 2
+    assert all(item.label == 1 for item in items)
+    assert {item.plant_part for item in items} == {"leaf", "fruit"}
+
+
+def test_build_defect_crops_applies_severity_threshold(fixtures_dir):
+    items = build_defect_crops(
+        fixtures_dir / "dummy_aihub",
+        fixtures_dir / "dummy_vlm_labels.jsonl",
+        defect_threshold=4,
+    )
+    # severity=6 → defect (label=1). Only leaf box matches vlm plant_part.
+    assert len(items) >= 1
+    assert any(item.label == 1 and item.plant_part == "leaf" for item in items)
+
+
+def test_classification_crop_dataset_returns_tensor(fixtures_dir):
+    items = build_fireblight_crops(fixtures_dir / "dummy_aihub")
+    ds = ClassificationCropDataset(items)
+    img, label = ds[0]
+    assert img.ndim == 3 and img.shape[0] == 3
+    assert label in (0, 1)
