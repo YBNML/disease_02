@@ -5,6 +5,13 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from disease_detection.labeling.batch_label import (
+    BatchJob,
+    BatchResult,
+    hash_image_file,
+    load_completed_hashes,
+    run_batch,
+)
 from disease_detection.labeling.prompts import SEVERITY_PROMPT_V1, PROMPT_VERSION
 from disease_detection.labeling.vlm_client import (
     VLMLabel,
@@ -121,15 +128,6 @@ def test_call_claude_cli_timeout_normalized_to_runtimeerror(mocker, tmp_path):
     img.write_bytes(b"fake")
     with pytest.raises(RuntimeError, match="timed out"):
         call_claude_cli(img, prompt="P", model="haiku", timeout_seconds=1)
-
-
-from disease_detection.labeling.batch_label import (
-    BatchJob,
-    BatchResult,
-    hash_image_file,
-    load_completed_hashes,
-    run_batch,
-)
 
 
 def test_hash_image_file_deterministic(tmp_path):
