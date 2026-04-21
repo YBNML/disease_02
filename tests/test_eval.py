@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 
+from disease_detection.eval.inference import evaluate_classifier_oracle
 from disease_detection.eval.metrics import (
     ClassificationMetricsReport,
     compute_classification_report,
@@ -46,3 +49,21 @@ def test_compute_detection_map_smoke():
     m = compute_detection_map(preds, targets)
     assert "map_50" in m
     assert m["map_50"] >= 0.99
+
+
+def test_evaluate_classifier_oracle_returns_report(fixtures_dir):
+    from disease_detection.data.classification_dataset import build_fireblight_crops
+
+    items = build_fireblight_crops(fixtures_dir / "dummy_aihub")
+
+    def fake_classifier_fn(batch):
+        # Always predict positive with high probability
+        return torch.full((batch.shape[0],), 3.0)  # sigmoid(3)=0.95
+
+    rep = evaluate_classifier_oracle(
+        items,
+        classifier_fn=fake_classifier_fn,
+        batch_size=2,
+    )
+    assert rep.accuracy >= 0.0
+    assert rep.recall == 1.0  # all-positive predictor catches all positives
