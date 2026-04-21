@@ -1,0 +1,13 @@
+accelerator: cpu
+devices: 1
+precision: 32
+max_epochs: 1
+limit_train_batches: 10
+limit_val_batches: 4
+log_every_n_steps: 2
+early_stopping: null
+checkpoint:
+  monitor: val/loss
+  mode: min
+  save_top_k: 1
+  filename: "smoke-{epoch}"

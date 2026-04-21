@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - override /data: aihub_combined
+  - override /model: classifier_resnet18
+  - override /trainer: ubuntu_gpu
+
+run:
+  name: fireblight_baseline
+
+classifier:
+  kind: fireblight
+  label_source: aihub
+  defect_threshold: null
+  pos_weight: null

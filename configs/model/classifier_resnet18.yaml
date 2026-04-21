@@ -1,0 +1,5 @@
+_target_: disease_detection.models.classifier.PlantDefectClassifier
+lr: 1e-4
+weight_decay: 1e-2
+pos_weight: null
+t_max: 30

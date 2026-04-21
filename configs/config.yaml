@@ -1,0 +1,13 @@
+defaults:
+  - data: aihub_combined
+  - model: classifier_resnet18
+  - trainer: ubuntu_gpu
+  - _self_
+
+seed: 42
+paths:
+  dataset_root: ${oc.env:DATASET_ROOT,???}
+  models_root: ${paths.dataset_root}/../models/disease_02
+
+run:
+  name: default
