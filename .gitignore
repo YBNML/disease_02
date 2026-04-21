@@ -1,0 +1,73 @@
+# Reference-only original code and internal artifacts (excluded from version control)
+original_code/
+*.pptx
+*.pdf
+
+# Datasets and raw data
+data/
+raw/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+!docs/**/*.png
+!docs/**/*.jpg
+!tests/fixtures/**/*
+
+# Model artifacts
+models/
+*.ckpt
+*.pth
+*.pt
+*.onnx
+
+# Training outputs / logs
+outputs/
+lightning_logs/
+wandb/
+tensorboard_logs/
+reports/
+mlruns/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# PowerPoint lock files
+~$*.pptx
+
+# Hydra multi-run
+multirun/
