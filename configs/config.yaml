@@ -6,7 +6,9 @@ defaults:
 
 seed: 42
 paths:
-  dataset_root: ${oc.env:DATASET_ROOT,???}
+  # DATASET_ROOT 미설정 시 InterpolationResolutionError로 즉시 실패 (문자열 "???"이
+  # 파이프라인 안으로 새어들어가는 것을 방지).
+  dataset_root: ${oc.env:DATASET_ROOT}
   models_root: ${paths.dataset_root}/../models/disease_02
 
 run:
