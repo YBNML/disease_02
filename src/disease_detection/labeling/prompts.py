@@ -17,11 +17,13 @@ SEVERITY_PROMPT_V1: str = (
     "- **1** = Very minor, cosmetic, or negligible defect (e.g., a small dry spot)\n"
     "- **5** = Moderate defect that affects part of the plant\n"
     "- **10** = Severe, widespread, or critical damage\n\n"
-    "### Return the following format as a single JSON object (no prose):\n"
-    "Provide both a **Classification** (NORMAL or DEFECT) and a **Severity** score (0-10).\n"
+    "### Return a single JSON object (no prose) with these fields:\n"
+    "- `Classification`: `NORMAL` or `DEFECT`\n"
+    "- `Severity`: `0` if NORMAL, `1-10` if DEFECT (match the rubric above)\n"
+    "- `explanation`: brief (≤ 15 words), include defect type and plant part if applicable\n\n"
     '```json\n{"classification": "NORMAL|DEFECT", "severity": 0-10, "explanation": "..."}\n```\n\n'
     "### Examples:\n"
     '- {"classification": "NORMAL", "severity": 0, "explanation": "fruit is healthy"}\n'
     '- {"classification": "DEFECT", "severity": 2, "explanation": "minor leaf tip browning"}\n'
-    '- {"classification": "DEFECT", "severity": 8, "explanation": "fruit is partially rotten"}\n'
+    '- {"classification": "DEFECT", "severity": 8, "explanation": "fruit partially rotten"}\n'
 )
