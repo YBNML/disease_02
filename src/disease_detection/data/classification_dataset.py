@@ -11,12 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import tv_tensors
 
-from .aihub import AIhubBox, AIhubImage, load_aihub_split
+from .aihub import load_aihub_split
 
 
 @dataclass(frozen=True)
@@ -107,12 +106,9 @@ class ClassificationCropDataset(Dataset):
         pil = Image.open(item.image_path).convert("RGB")
         x1, y1, x2, y2 = item.xyxy
         crop = pil.crop((x1, y1, x2, y2))
+        # tv_tensors.Image(PIL)은 이미 (3, H, W) uint8 Tensor를 생성. transform이
+        # 없으면 이대로 반환하고, 있으면 classifier transform 파이프라인에 넘긴다.
         img = tv_tensors.Image(crop)
         if self.transform is not None:
             img = self.transform(img)
-        else:
-            # 기본: uint8 tensor 그대로 반환
-            img = torch.as_tensor(list(crop.getdata()), dtype=torch.uint8).reshape(
-                crop.height, crop.width, 3
-            ).permute(2, 0, 1)
         return img, int(item.label)
