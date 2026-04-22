@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""PlantDefectClassifier 학습 Hydra 진입점. experiment preset에서 kind 분기."""
+"""분류기 학습 Hydra 진입점.
+
+experiment preset의 `classifier.kind` 필드로 두 분류 태스크를 분기:
+- `fireblight` → `PlantDefectClassifier` (ResNet18 binary)
+- `defect`     → `MultiPartDefectClassifier` (ResNet18 multi-head 4×3)
+
+Model 선택도 experiment preset이 `/model` override 로 지정 (classifier_resnet18
+vs classifier_multipart). 이 스크립트는 kind 에 맞는 dataset·module을 찾아 붙인다.
+"""
 from __future__ import annotations
 
 import json
@@ -8,45 +16,42 @@ from pathlib import Path
 import hydra
 import pytorch_lightning as pl
 import torch
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from disease_detection.data.classification_dataset import (
     ClassificationCropDataset,
-    build_defect_crops,
-    build_fireblight_crops,
+    MultiPartCropDataset,
+    build_defect_items,
+    build_fireblight_items,
 )
 from disease_detection.data.transforms import (
     build_classifier_eval_transform,
     build_classifier_train_transform,
 )
-from disease_detection.models.classifier import PlantDefectClassifier
 from disease_detection.utils.seeding import set_seed
 
 
-def _build_items(cfg: DictConfig):
+def _build_items_and_dataset(cfg: DictConfig):
     aihub_root = Path(cfg.paths.dataset_root) / "raw" / "aihub"
     kind = cfg.classifier.kind
     if kind == "fireblight":
         items = []
         for crop_name in ("pear", "apple"):
-            items.extend(build_fireblight_crops(aihub_root / crop_name))
+            items.extend(build_fireblight_items(aihub_root / crop_name))
         split_name = "classifier_fireblight_split.json"
+        dataset_cls = ClassificationCropDataset
     elif kind == "defect":
         vlm_path = Path(cfg.classifier.vlm_jsonl)
         items = []
         for crop_name in ("pear", "apple"):
-            items.extend(
-                build_defect_crops(
-                    aihub_root / crop_name,
-                    vlm_path,
-                    defect_threshold=cfg.classifier.defect_threshold,
-                )
-            )
+            items.extend(build_defect_items(aihub_root / crop_name, vlm_path))
         split_name = "classifier_defect_split.json"
+        dataset_cls = MultiPartCropDataset
     else:
         raise ValueError(f"Unknown classifier.kind: {kind}")
-    return items, split_name
+    return items, split_name, dataset_cls
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="config")
@@ -54,19 +59,15 @@ def main(cfg: DictConfig) -> None:
     set_seed(cfg.seed)
     print(OmegaConf.to_yaml(cfg))
 
-    items, split_name = _build_items(cfg)
+    items, split_name, dataset_cls = _build_items_and_dataset(cfg)
     splits_path = Path(cfg.paths.dataset_root) / "splits" / split_name
     split = json.loads(splits_path.read_text(encoding="utf-8"))
 
     train_items = [items[i] for i in split["train"]]
     val_items = [items[i] for i in split["val"]]
 
-    train_ds = ClassificationCropDataset(
-        train_items, transform=build_classifier_train_transform()
-    )
-    val_ds = ClassificationCropDataset(
-        val_items, transform=build_classifier_eval_transform()
-    )
+    train_ds = dataset_cls(train_items, transform=build_classifier_train_transform())
+    val_ds = dataset_cls(val_items, transform=build_classifier_eval_transform())
     train_loader = torch.utils.data.DataLoader(
         train_ds,
         batch_size=cfg.data.batch_size,
@@ -80,12 +81,8 @@ def main(cfg: DictConfig) -> None:
         num_workers=cfg.data.num_workers,
     )
 
-    module = PlantDefectClassifier(
-        lr=cfg.model.lr,
-        weight_decay=cfg.model.weight_decay,
-        pos_weight=cfg.classifier.get("pos_weight"),
-        t_max=cfg.model.t_max,
-    )
+    # Model 은 Hydra `_target_` 으로 instantiate — fireblight vs multipart 자동 분기.
+    module = instantiate(cfg.model)
 
     ckpt_dir = f"{cfg.paths.models_root}/classifier_{cfg.classifier.kind}/{cfg.run.name}"
     callbacks = [

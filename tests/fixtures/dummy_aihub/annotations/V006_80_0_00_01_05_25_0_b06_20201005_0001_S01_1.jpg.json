@@ -1,0 +1,1 @@
+{"description": {"image": "V006_80_0_00_01_05_25_0_b06_20201005_0001_S01_1.jpg", "width": 640, "height": 480, "date": "2020/10/05", "task": 80, "type": 0}, "annotations": {"disease": 0, "crop": 1, "area": 1, "grow": 25, "risk": 0, "points": [{"xtl": 100, "ytl": 80, "xbr": 350, "ybr": 380}]}}

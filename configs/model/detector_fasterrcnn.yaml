@@ -1,5 +1,6 @@
 _target_: disease_detection.models.detector.FasterRCNNModule
-num_classes: 4
+# background + plant_roi (AIhub 스키마에 plant part 라벨 없음 → single-class).
+num_classes: 2
 lr: 0.005
 momentum: 0.9
 weight_decay: 5e-4

@@ -1,10 +1,19 @@
 # 배·사과 병충해 검출 (disease_02)
 
-Phase 1 설계 문서 — 2026-04-21 작성
+Phase 1 설계 문서 — 2026-04-21 초안, 2026-04-22 AIhub 실측 스키마 반영 업데이트
 
-원본 PPT 파이프라인(D → A)을 재현하여 배(Pear)와 사과(Apple)의 **화상병(fireblight)** 및 **범용 결함(general defect)** 검출을 수행하는 프로젝트. PyTorch Lightning + Hydra 기반으로 재작성하며, 깨끗한 재현 가능한 baseline 확보가 목표.
+원본 PPT 파이프라인(D → A)을 재현하여 배(Pear)와 사과(Apple)의 **화상병(fireblight)** 및 **범용 결함(general defect)** 검출을 수행하는 프로젝트. PyTorch Lightning + Hydra 기반.
 
-> **현재 상태**: 설계 완료, 구현 시작 전. 구현 진행에 따라 이 README 상단에 사용법·설치법 섹션이 추가될 예정.
+> **현재 상태**: Phase 1 구현 완료 + AIhub 실측 스키마 반영 완료. 학습 전 단계.
+
+### 중요 업데이트 (v0.2, 2026-04-22)
+
+AIhub 「과수화상병 촬영 이미지」 실제 스키마를 확인한 뒤 다음을 반영:
+
+- **이미지당 bbox 1개** 고정. plant part (leaf/stem/fruit) 라벨이 없음 → Detector 는 **single-class "plant_roi"**.
+- **화상병 이진화**는 `disease_code != 0` 로 단순화 (정상 vs 질병).
+- **범용 결함은 4-부위 × 3-state multi-head 분류기**로 재설계. VLM v2 프롬프트가 한 bbox crop 에서 `leaf/branch/fruit/stem` 각각에 대해 `{defect, normal, absent}` 를 동시에 출력. 이전 단일 severity 스칼라(v1) 구조는 폐기.
+- **2-stage 파이프라인 유지** (원본 `original_code` 가 택한 방향과 일치). 원거리 촬영 시 다중 plant 객체·배경 잡음 대응에 유리.
 
 ---
 
@@ -41,10 +50,13 @@ Phase 1 설계 문서 — 2026-04-21 작성
 | 대상 작물 | 배 + 사과 (통합 모델 1개) |
 | 작물 판별 | 입력 메타데이터로 전달, 모델 내부 분기 없음 |
 | 파이프라인 | 원본 D → A 구조 (2-stage) |
-| 두 분류기 | **독립** (backbone 공유 X) |
+| Detector 클래스 | **single-class** (bg + plant_roi). AIhub 에 부위 라벨 없음 |
+| 화상병 분류기 | ResNet18 binary. 라벨: AIhub `disease_code != 0` → 1 |
+| 범용 결함 분류기 | ResNet18 **multi-head (4 부위 × 3 state)**. 라벨: VLM v2 |
+| 범용 결함 부위 | `leaf / branch / fruit / stem` 각각 `{defect, normal, absent}` |
 | VLM 라벨링 도구 | Claude Code CLI headless (`claude -p --model haiku`), macmini |
+| VLM 프롬프트 | v2 (4부위 동시 라벨링, bbox crop 입력) |
 | VLM 라벨링 규모 | 범용 결함용 3,000~5,000장 (화상병은 AIhub 원본 라벨 그대로) |
-| 심각도 이진화 | `severity ≤ 3` → 정상, `severity ≥ 4` → 결함 (PPT의 `≥1`에서 조정) |
 | 학습 호스트 | Ubuntu 데스크탑 (SSH 원격) |
 | 개발·라벨링·평가 | macmini |
 | 프레임워크 | PyTorch Lightning + Hydra |

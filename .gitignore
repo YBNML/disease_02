@@ -6,6 +6,8 @@ original_code/
 # Datasets and raw data (root-level only; source packages named `data/` are OK)
 /data/
 /raw/
+# AIhub 한글 이름 데이터셋 디렉토리 (과수화상병 촬영 이미지)
+/과수화상병 촬영 이미지/
 *.jpg
 *.jpeg
 *.png

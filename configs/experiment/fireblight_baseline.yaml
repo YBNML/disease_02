@@ -1,4 +1,5 @@
 # @package _global_
+# 화상병 이진 분류기 학습. 라벨은 AIhub `disease_code != 0` 이진화.
 defaults:
   - override /data: aihub_combined
   - override /model: classifier_resnet18
@@ -10,5 +11,4 @@ run:
 classifier:
   kind: fireblight
   label_source: aihub
-  defect_threshold: null
   pos_weight: null

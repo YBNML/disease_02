@@ -1,7 +1,8 @@
 # @package _global_
+# 범용 결함 (4-부위 × 3-state) multi-head 분류기 학습.
 defaults:
   - override /data: aihub_combined
-  - override /model: classifier_resnet18
+  - override /model: classifier_multipart
   - override /trainer: ubuntu_gpu
 
 run:
@@ -11,8 +12,6 @@ classifier:
   kind: defect
   label_source: vlm
   vlm_jsonl: ${paths.dataset_root}/labels/vlm_severity/severity_labels.jsonl
-  defect_threshold: 4
-  pos_weight: null
 
 trainer:
   max_epochs: 30

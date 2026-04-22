@@ -1,7 +1,16 @@
-"""Faster R-CNN 학습·추론용 Dataset.
+"""Faster R-CNN 학습·추론용 Dataset (single-class plant ROI).
 
-torchvision detection reference 규격을 따른다: `target` = dict with `boxes`, `labels`,
-`image_id`, `area`, `iscrowd`. v2 transforms는 `tv_tensors.BoundingBoxes` 를 처리.
+AIhub 데이터에는 plant part (leaf/stem/fruit) 라벨이 없으므로 detector는 단일 클래스
+"plant_roi" 만을 학습한다. 배경 포함 `num_classes=2`.
+
+torchvision detection 레퍼런스 규격을 따름:
+    target = {
+        "boxes":  tv_tensors.BoundingBoxes(xyxy, ...),
+        "labels": int64 Tensor (전부 1),
+        "image_id": int64 Tensor [idx],
+        "area":   float Tensor (transform 이후 재계산),
+        "iscrowd": int64 Tensor (zeros),
+    }
 """
 from __future__ import annotations
 
@@ -15,7 +24,11 @@ from torchvision import tv_tensors
 
 from .aihub import AIhubImage, load_aihub_split
 
-PART_CATEGORIES: dict[str, int] = {"leaf": 1, "stem": 2, "fruit": 3}
+PART_CATEGORIES: dict[str, int] = {"plant_roi": 1}
+"""`AIhubBox.category` → Faster R-CNN label id. 배경=0, plant_roi=1."""
+
+NUM_CLASSES: int = 1 + len(PART_CATEGORIES)
+"""FasterRCNNModule(num_classes=...)에 넘겨야 하는 값. 배경 1 + 전경 N."""
 
 
 class DetectionDataset(Dataset):
@@ -40,7 +53,8 @@ class DetectionDataset(Dataset):
         self, idx: int
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         entry = self.entries[idx]
-        pil = Image.open(entry.image_path).convert("RGB")
+        with Image.open(entry.image_path) as src:
+            pil = src.convert("RGB")
         img = tv_tensors.Image(pil)
 
         if entry.boxes:
@@ -64,9 +78,7 @@ class DetectionDataset(Dataset):
         if self.transform is not None:
             img, target = self.transform(img, target)
 
-        # `area`는 transform 이후에 계산해야 geometric augmentation (resize, crop,
-        # scale jitter 등) 적용된 bbox 기준이 된다. COCO eval의 small/medium/large
-        # 분류에도 이 값이 쓰이므로 pre-transform 계산은 금지.
+        # `area`는 transform 이후 최종 bbox 기준으로 계산 — geometric aug로 크기 바뀜.
         b = target["boxes"]
         target["area"] = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
         return img, target
