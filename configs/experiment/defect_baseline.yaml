@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - override /data: aihub_combined
+  - override /model: classifier_resnet18
+  - override /trainer: ubuntu_gpu
+
+run:
+  name: defect_baseline
+
+classifier:
+  kind: defect
+  label_source: vlm
+  vlm_jsonl: ${paths.dataset_root}/labels/vlm_severity/severity_labels.jsonl
+  defect_threshold: 4
+  pos_weight: null
+
+trainer:
+  max_epochs: 30

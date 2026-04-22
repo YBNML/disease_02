@@ -1,0 +1,16 @@
+accelerator: gpu
+devices: 1
+precision: "16-mixed"
+max_epochs: 50
+gradient_clip_val: 1.0
+log_every_n_steps: 20
+early_stopping:
+  # 분류기는 val/loss, detector는 val/map_50. Hydra에서 실험별로 덮어쓴다.
+  monitor: val/loss
+  patience: 5
+  mode: min
+checkpoint:
+  monitor: val/loss
+  mode: min
+  save_top_k: 3
+  filename: "{epoch}-{val/loss:.4f}"

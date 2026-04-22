@@ -1,0 +1,7 @@
+name: aihub_apple
+crops: [apple]
+root: ${paths.dataset_root}/raw/aihub
+splits_dir: ${paths.dataset_root}/splits
+split: train
+batch_size: 16
+num_workers: 4

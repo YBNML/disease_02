@@ -3,9 +3,9 @@ original_code/
 *.pptx
 *.pdf
 
-# Datasets and raw data
-data/
-raw/
+# Datasets and raw data (root-level only; source packages named `data/` are OK)
+/data/
+/raw/
 *.jpg
 *.jpeg
 *.png
@@ -15,8 +15,8 @@ raw/
 !docs/**/*.jpg
 !tests/fixtures/**/*
 
-# Model artifacts
-models/
+# Model artifacts (root-level only; source package `models/` is OK)
+/models/
 *.ckpt
 *.pth
 *.pt

@@ -1,0 +1,2 @@
+{"image_path": "images/sample1.jpg", "image_sha256": "dummy1", "crop": "pear", "plant_part": "leaf", "classification": "DEFECT", "severity": 6, "explanation": "leaf tip browning", "model": "claude-haiku-4-5", "prompt_version": "v1", "timestamp": "2026-04-21T00:00:00Z"}
+{"image_path": "images/sample1.jpg", "image_sha256": "dummy2", "crop": "pear", "plant_part": "fruit", "classification": "NORMAL", "severity": 2, "explanation": "fruit mostly intact", "model": "claude-haiku-4-5", "prompt_version": "v1", "timestamp": "2026-04-21T00:00:00Z"}

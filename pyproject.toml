@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "disease-detection"
+version = "0.1.0"
+description = "Pear & apple disease detection — Phase 1 baseline"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.3",
+  "torchvision>=0.18",
+  "pytorch-lightning>=2.3",
+  "torchmetrics>=1.4",
+  "pycocotools>=2.0",  # torchmetrics.detection.MeanAveragePrecision 백엔드
+  "hydra-core>=1.3",
+  "omegaconf>=2.3",
+  "pyyaml",
+  "pillow",
+  "numpy",
+  "tqdm",
+  "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-mock", "ruff", "black"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "integration: requires real Claude CLI (manual only)",
+  "gpu: requires CUDA",
+]

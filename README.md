@@ -357,6 +357,81 @@ python scripts/evaluate.py \
 
 ---
 
+## 사용법
+
+### 1. 환경 준비
+
+```bash
+# macmini
+conda env create -f environment-macos.yml
+
+# Ubuntu
+conda env create -f environment-linux.yml
+
+conda activate disease-detection
+pip install -e .[dev]
+cp .env.example .env    # DATASET_ROOT 등 편집
+```
+
+### 2. AIhub 다운로드 검증 (macmini)
+
+```bash
+export DATASET_ROOT=~/datasets/disease_02
+scripts/download_aihub.sh    # 디렉토리 구조·개수 검증
+```
+
+### 3. VLM 재라벨링 (macmini, Max 20x)
+
+```bash
+python scripts/run_labeling.py --sample-size 3000 --model haiku \
+  --out labels/vlm_severity/severity_labels.jsonl
+```
+
+중단/재개 자동. `.errors.jsonl`에 실패 기록. Claude Code CLI에 로그인 상태여야 함.
+
+### 4. Ubuntu로 동기화
+
+```bash
+export UBUNTU_USER=... UBUNTU_HOST=... REMOTE_DATASET_ROOT=...
+scripts/sync_to_ubuntu.sh
+```
+
+### 5. Split 생성 (Ubuntu)
+
+```bash
+python scripts/preprocess.py --defect-threshold 4
+```
+
+### 6. 학습 (Ubuntu)
+
+```bash
+# Detector
+python scripts/train_detector.py trainer=ubuntu_gpu data=aihub_combined model=detector_fasterrcnn
+
+# 화상병 분류기
+python scripts/train_classifier.py +experiment=fireblight_baseline
+
+# 범용 결함 분류기
+python scripts/train_classifier.py +experiment=defect_baseline
+```
+
+### 7. 평가 (macmini 또는 Ubuntu)
+
+```bash
+python scripts/evaluate.py \
+  +detector_ckpt=$MODELS/detector/best.ckpt \
+  +fireblight_ckpt=$MODELS/classifier_fireblight/best.ckpt \
+  +defect_ckpt=$MODELS/classifier_defect/best.ckpt
+```
+
+### 8. 테스트
+
+```bash
+pytest -q                    # 단위 테스트 (GPU·CLI 불필요)
+pytest -m integration        # 실제 Claude CLI 사용 (수동)
+pytest -m gpu                # CUDA 머신에서만
+```
+
 ## 라이선스
 
 현재 미정.

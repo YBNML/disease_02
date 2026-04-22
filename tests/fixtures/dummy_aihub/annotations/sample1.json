@@ -1,0 +1,1 @@
+{"image": {"file_name": "sample1.jpg", "width": 640, "height": 480}, "annotations": [{"bbox": [100, 80, 250, 300], "category": "leaf"}, {"bbox": [300, 200, 420, 360], "category": "fruit"}], "labels": {"fireblight": 1}, "meta": {"crop": "pear"}}

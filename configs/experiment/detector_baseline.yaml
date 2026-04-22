@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - override /data: aihub_combined
+  - override /model: detector_fasterrcnn
+  - override /trainer: ubuntu_gpu
+
+run:
+  name: detector_baseline
+
+# Detector는 val/loss가 아닌 val/map_50을 모니터한다 (FasterRCNNModule은
+# epoch 단위로 torchmetrics MeanAveragePrecision을 집계해 로깅한다).
+trainer:
+  early_stopping:
+    monitor: val/map_50
+    patience: 5
+    mode: max
+  checkpoint:
+    monitor: val/map_50
+    mode: max
+    save_top_k: 3
+    filename: "{epoch}-{val/map_50:.4f}"
