@@ -1,7 +1,19 @@
-"""Claude Code CLI headless 래퍼.
+"""Claude Code CLI headless 래퍼 + VLM 응답 파서 (prompt v2).
 
-`claude -p "<prompt>" --model <model>` 를 subprocess로 호출하고 JSON 응답 파싱.
-실패 시 재시도 로직은 `batch_label.py`에서 담당; 이 모듈은 단일 호출·파싱만.
+- `call_claude_cli(image_path, prompt, model)`: `claude -p --model <m>` subprocess 호출.
+- `parse_vlm_response(raw) -> VLMLabel`: v2 JSON 응답을 구조화해 반환.
+
+v2 응답 포맷 (prompts.SEVERITY_PROMPT_V2):
+    {
+      "parts": {
+        "leaf":   {"state": "defect|normal|absent", "severity": 0-10, "reason": "..."},
+        "branch": {...},
+        "fruit":  {...},
+        "stem":   {...}
+      }
+    }
+
+재시도·백오프 로직은 `batch_label.py` 가 담당; 이 모듈은 단일 호출·파싱만.
 """
 from __future__ import annotations
 
@@ -9,17 +21,28 @@ import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
+
+_VALID_STATES = frozenset({"defect", "normal", "absent"})
+_REQUIRED_PARTS = ("leaf", "branch", "fruit", "stem")
+
+
+@dataclass(frozen=True)
+class PartLabel:
+    state: str       # "defect" | "normal" | "absent"
+    severity: int    # 0–10
+    reason: str
 
 
 @dataclass(frozen=True)
 class VLMLabel:
-    classification: str  # NORMAL or DEFECT
-    severity: int  # 0-10
-    explanation: str
+    """`parts` 는 leaf/branch/fruit/stem 4 부위 모두 포함."""
+
+    parts: Mapping[str, PartLabel]
 
 
 def _extract_first_json_object(raw: str) -> str:
-    """첫 번째 `{ ... }` balanced block을 추출. 문자열 내 중괄호·escape 처리."""
+    """첫 balanced `{ ... }` 블록 추출. 문자열 내 중괄호·escape 처리."""
     start = raw.find("{")
     if start == -1:
         raise ValueError(f"JSON 블록을 찾지 못함: {raw[:200]}")
@@ -48,17 +71,32 @@ def _extract_first_json_object(raw: str) -> str:
     raise ValueError(f"균형 맞지 않는 JSON 블록: {raw[:200]}")
 
 
-def parse_vlm_response(raw: str) -> VLMLabel:
-    """문자열에서 첫 번째 JSON 블록(중괄호 균형 기준)을 추출하여 VLMLabel로 변환."""
-    obj = json.loads(_extract_first_json_object(raw))
-    cls = str(obj["classification"]).upper()
-    sev = int(obj["severity"])
-    expl = str(obj.get("explanation", ""))
-    if cls not in {"NORMAL", "DEFECT"}:
-        raise ValueError(f"Unknown classification: {cls}")
+def _parse_part(raw: dict) -> PartLabel:
+    state = str(raw.get("state", "")).lower()
+    if state not in _VALID_STATES:
+        raise ValueError(f"Unknown part state: {state!r}")
+    sev = int(raw.get("severity", 0))
     if not 0 <= sev <= 10:
         raise ValueError(f"Severity out of range: {sev}")
-    return VLMLabel(classification=cls, severity=sev, explanation=expl)
+    if state in {"normal", "absent"} and sev != 0:
+        # v2 규칙: defect 만 1~10. 다른 상태는 0 강제.
+        sev = 0
+    reason = str(raw.get("reason", "")).strip()
+    return PartLabel(state=state, severity=sev, reason=reason)
+
+
+def parse_vlm_response(raw: str) -> VLMLabel:
+    """v2 JSON 응답을 `VLMLabel` 로 변환."""
+    obj = json.loads(_extract_first_json_object(raw))
+    parts_raw = obj.get("parts")
+    if not isinstance(parts_raw, dict):
+        raise ValueError("Missing or invalid 'parts' object in response")
+    parts: dict[str, PartLabel] = {}
+    for name in _REQUIRED_PARTS:
+        if name not in parts_raw:
+            raise ValueError(f"Missing '{name}' part in response")
+        parts[name] = _parse_part(parts_raw[name])
+    return VLMLabel(parts=parts)
 
 
 def call_claude_cli(
@@ -67,14 +105,12 @@ def call_claude_cli(
     model: str = "haiku",
     timeout_seconds: int = 120,
 ) -> VLMLabel:
-    """`claude -p` 호출 후 응답 파싱.
+    """`claude -p` 호출 후 v2 응답 파싱.
 
-    이미지 경로는 프롬프트 끝에 직접 포함. Claude Code는 절대 경로를 Read 툴로
-    자동 로딩한다. `batch_label.py`가 재시도 경계로 삼을 수 있도록, timeout도
-    `RuntimeError`로 정규화하여 단일 exception 컨트랙트를 유지한다.
+    이미지 경로는 프롬프트 끝에 포함. Claude Code는 절대 경로를 Read 툴로 자동 로딩.
 
     Raises:
-        FileNotFoundError: `image_path`가 존재하지 않음.
+        FileNotFoundError: `image_path` 없음.
         RuntimeError: CLI 비정상 종료, timeout, 또는 응답 파싱 실패.
     """
     if not image_path.exists():

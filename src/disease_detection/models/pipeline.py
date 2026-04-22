@@ -1,19 +1,26 @@
 """Detector + 두 분류기 결합 추론 래퍼.
 
-Detector는 부위 bbox를 예측하고, 각 bbox를 crop하여 두 분류기 각각에 입력.
-`fireblight_prob`과 `defect_prob`을 동시에 반환.
+단계:
+1. Faster R-CNN single-class detector 가 plant ROI bbox 예측
+2. 각 bbox 를 crop → 두 분류기 병렬 실행
+   - `fireblight_classifier`: (B,) 이진 logit → sigmoid → `fireblight_prob`
+   - `defect_classifier` (multi-part): (B, 4, 3) logit → softmax (dim=-1) →
+     각 부위 `state=defect` 확률을 `part_defect_probs[part]` 에 저장
+
+배경 clamp·빈 bbox 처리·autograd 비활성화는 Phase 1 그대로.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 import torch
 from PIL import Image
 from torchvision import tv_tensors
 from torchvision.transforms import v2
 
+from ..data.classification_dataset import PART_STATES, PLANT_PARTS
 from ..data.detection_dataset import PART_CATEGORIES
 from ..data.transforms import (
     build_classifier_eval_transform,
@@ -21,23 +28,30 @@ from ..data.transforms import (
 )
 
 _INV_PART = {v: k for k, v in PART_CATEGORIES.items()}
+_DEFECT_STATE_INDEX = PART_STATES["defect"]
 
 
 class _DetectorLike(Protocol):
     def __call__(self, images: list[torch.Tensor]) -> list[dict]: ...
 
 
-class _ClassifierLike(Protocol):
-    def __call__(self, crops: torch.Tensor) -> torch.Tensor: ...
+class _FireblightClassifierLike(Protocol):
+    def __call__(self, crops: torch.Tensor) -> torch.Tensor:
+        """Return shape `(B,)` binary logits."""
+
+
+class _DefectClassifierLike(Protocol):
+    def __call__(self, crops: torch.Tensor) -> torch.Tensor:
+        """Return shape `(B, NUM_PARTS, NUM_STATES)` logits for multi-part head."""
 
 
 @dataclass
 class Detection:
-    plant_part: str
+    roi_category: str            # detector label, 현재는 항상 "plant_roi"
     xyxy: tuple[float, float, float, float]
-    score: float
+    score: float                 # detector confidence
     fireblight_prob: float
-    defect_prob: float
+    part_defect_probs: dict[str, float]   # {leaf, branch, fruit, stem} → P(state=defect)
 
 
 @dataclass
@@ -51,8 +65,8 @@ class TwoStagePipeline:
     def __init__(
         self,
         detector: _DetectorLike,
-        fireblight_classifier: _ClassifierLike,
-        defect_classifier: _ClassifierLike,
+        fireblight_classifier: _FireblightClassifierLike,
+        defect_classifier: _DefectClassifierLike,
         score_threshold: float = 0.5,
         detector_transform: v2.Compose | None = None,
         classifier_transform: v2.Compose | None = None,
@@ -81,8 +95,7 @@ class TwoStagePipeline:
         labels = labels[keep]
         scores = scores[keep]
 
-        # 이미지 경계 밖으로 벗어난 bbox는 PIL이 검은색으로 패딩해 분류기 입력을 오염.
-        # 경계에 clamp하고, 양의 면적이 아닌 bbox는 drop하여 zero-size crop·stack 실패를 방지.
+        # 이미지 경계 밖 bbox 는 PIL 이 검은색 패딩 → 분류기 입력 오염. clamp 필수.
         if len(boxes) > 0:
             boxes_clamped = boxes.clone()
             boxes_clamped[:, 0].clamp_(0, width)
@@ -96,11 +109,9 @@ class TwoStagePipeline:
             labels = labels[valid]
             scores = scores[valid]
 
-        detections: list[Detection] = []
         if len(boxes) == 0:
             return PipelinePrediction(image_path=image_path, crop=crop, detections=[])
 
-        # crop + 분류기 배치 입력
         crops: list[torch.Tensor] = []
         for xyxy in boxes.tolist():
             x1, y1, x2, y2 = (int(round(v)) for v in xyxy)
@@ -108,27 +119,45 @@ class TwoStagePipeline:
             crops.append(self.cls_tfm(tv_tensors.Image(c)))
         crop_batch = torch.stack(crops)
 
+        # Fireblight 분류기: (B,) 이진 logit 기대
         fire_logits = self.fireblight(crop_batch)
-        defect_logits = self.defect(crop_batch)
-        for name, logits in (("fireblight", fire_logits), ("defect", defect_logits)):
-            if logits.ndim != 1 or logits.shape[0] != crop_batch.shape[0]:
-                raise ValueError(
-                    f"{name} classifier returned shape {tuple(logits.shape)}, "
-                    f"expected ({crop_batch.shape[0]},)"
-                )
+        if fire_logits.ndim != 1 or fire_logits.shape[0] != crop_batch.shape[0]:
+            raise ValueError(
+                f"fireblight classifier returned shape {tuple(fire_logits.shape)}, "
+                f"expected ({crop_batch.shape[0]},)"
+            )
         fire_probs = torch.sigmoid(fire_logits).tolist()
-        defect_probs = torch.sigmoid(defect_logits).tolist()
 
-        for box, label_id, score, fp, dp in zip(
-            boxes.tolist(), labels.tolist(), scores.tolist(), fire_probs, defect_probs
+        # Defect 분류기: (B, NUM_PARTS, NUM_STATES) — multi-part head
+        defect_logits = self.defect(crop_batch)
+        if (
+            defect_logits.ndim != 3
+            or defect_logits.shape[0] != crop_batch.shape[0]
+            or defect_logits.shape[1] != len(PLANT_PARTS)
+            or defect_logits.shape[2] != len(PART_STATES)
         ):
+            raise ValueError(
+                f"defect classifier returned shape {tuple(defect_logits.shape)}, "
+                f"expected ({crop_batch.shape[0]}, {len(PLANT_PARTS)}, {len(PART_STATES)})"
+            )
+        defect_softmax = torch.softmax(defect_logits, dim=-1)
+        defect_probs = defect_softmax[..., _DEFECT_STATE_INDEX].tolist()
+
+        detections: list[Detection] = []
+        for i, (box, label_id, score, fp) in enumerate(
+            zip(boxes.tolist(), labels.tolist(), scores.tolist(), fire_probs)
+        ):
+            part_probs = {
+                part_name: float(defect_probs[i][j])
+                for j, part_name in enumerate(PLANT_PARTS)
+            }
             detections.append(
                 Detection(
-                    plant_part=_INV_PART.get(int(label_id), "unknown"),
+                    roi_category=_INV_PART.get(int(label_id), "unknown"),
                     xyxy=tuple(float(v) for v in box),
                     score=float(score),
                     fireblight_prob=float(fp),
-                    defect_prob=float(dp),
+                    part_defect_probs=part_probs,
                 )
             )
         return PipelinePrediction(

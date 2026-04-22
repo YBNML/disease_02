@@ -52,18 +52,21 @@ def test_compute_detection_map_smoke():
 
 
 def test_evaluate_classifier_oracle_returns_report(fixtures_dir):
-    from disease_detection.data.classification_dataset import build_fireblight_crops
+    from disease_detection.data.classification_dataset import build_fireblight_items
 
-    items = build_fireblight_crops(fixtures_dir / "dummy_aihub")
+    items = build_fireblight_items(fixtures_dir / "dummy_aihub")
+    # Fixture: 1 pear (label 0) + 1 apple (label 1)
+    assert {it.label for it in items} == {0, 1}
 
     def fake_classifier_fn(batch):
         # Always predict positive with high probability
-        return torch.full((batch.shape[0],), 3.0)  # sigmoid(3)=0.95
+        return torch.full((batch.shape[0],), 3.0)  # sigmoid(3) ≈ 0.95
 
     rep = evaluate_classifier_oracle(
         items,
         classifier_fn=fake_classifier_fn,
         batch_size=2,
     )
+    # 2 items, all predicted positive → recall=1.0 on the 1 positive, precision=0.5.
     assert rep.accuracy >= 0.0
-    assert rep.recall == 1.0  # all-positive predictor catches all positives
+    assert rep.recall == 1.0

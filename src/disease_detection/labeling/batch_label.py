@@ -20,9 +20,14 @@ from .vlm_client import VLMLabel, call_claude_cli
 
 @dataclass(frozen=True)
 class BatchJob:
+    """범용 결함 라벨링 배치 단위 — 이미지 1장 (bbox 1개) 에 대응.
+
+    AIhub 는 이미지당 bbox 1개이고 VLM v2 는 이미지 crop을 통째로 본 뒤 4부위를
+    동시에 판정하므로 별도 `plant_part` 필드가 필요 없다.
+    """
+
     image_path: Path
     crop: str
-    plant_part: str
 
 
 @dataclass
@@ -74,14 +79,19 @@ def _write_label_line(
     model: str,
     prompt_version: str,
 ) -> None:
+    parts_record = {
+        name: {
+            "state": p.state,
+            "severity": p.severity,
+            "reason": p.reason,
+        }
+        for name, p in label.parts.items()
+    }
     record = {
         "image_path": str(job.image_path),
         "image_sha256": sha,
         "crop": job.crop,
-        "plant_part": job.plant_part,
-        "classification": label.classification,
-        "severity": label.severity,
-        "explanation": label.explanation,
+        "parts": parts_record,
         "model": model,
         "prompt_version": prompt_version,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -98,7 +108,6 @@ def _write_error_line(errors: Path, *, job: BatchJob, error: str) -> None:
                 {
                     "image_path": str(job.image_path),
                     "crop": job.crop,
-                    "plant_part": job.plant_part,
                     "error": error,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
