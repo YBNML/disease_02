@@ -385,12 +385,28 @@ pip install -e .[dev]
 cp .env.example .env    # DATASET_ROOT 등 편집
 ```
 
-### 2. AIhub 다운로드 검증 (macmini)
+### 2. AIhub 다운로드 & 추출 (macmini)
+
+AIhub 「과수화상병 촬영 이미지」를 수동 다운로드(zip) 한 뒤 재구성:
 
 ```bash
 export DATASET_ROOT=~/datasets/disease_02
-scripts/download_aihub.sh    # 디렉토리 구조·개수 검증
+
+# 1) zip 무결성·레이아웃을 먼저 라벨만 추출해 확인 (수십 MB, 수초):
+python scripts/extract_aihub.py \
+  --src "/path/to/과수화상병 촬영 이미지" \
+  --labels-only
+
+# 2) 모든 zip 추출 (이미지 포함, 100 GB+, 수십 분):
+python scripts/extract_aihub.py \
+  --src "/path/to/과수화상병 촬영 이미지"
+
+# 3) 레이아웃 검증:
+scripts/download_aihub.sh   # $DATASET_ROOT/raw/aihub/{pear,apple}/{images,annotations} 확인
 ```
+
+추출기는 sentinel(`raw/aihub/<crop>/<kind>/.<zip>.extracted`) 로 **재개 가능**.
+Training / Validation 구분은 무시하고 플랫하게 합친 뒤 자체 stratified split (`preprocess.py`) 을 생성.
 
 ### 3. VLM 재라벨링 (macmini, Max 20x)
 
